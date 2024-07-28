@@ -708,6 +708,11 @@ pub const Namespace = struct {
         //        else => {},
         //    };
         //}
+        // allow disassemble with 'llvm-objdump --disassemble-symbols'
+        for (slice[0]) |*byte| switch (byte.*) {
+            ',' => byte.* = '~',
+            else => {},
+        };
 
         return ip.getOrPutTrailingString(gpa, tid, @intCast(slice[0].len), .no_embedded_nulls);
     }
