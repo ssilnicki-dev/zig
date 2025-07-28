@@ -120,6 +120,7 @@ pub const Tag = enum {
     work_item_id,
     work_group_size,
     work_group_id,
+    asm_label,
 };
 
 pub const EvalToError = enum {
@@ -1004,6 +1005,14 @@ pub const list = list: {
             "@workGroupId",
             .{
                 .tag = .work_group_id,
+                .param_count = 1,
+                .illegal_outside_function = true,
+            },
+        },
+        .{
+            "@at",
+            .{
+                .tag = .asm_label,
                 .param_count = 1,
                 .illegal_outside_function = true,
             },
