@@ -1393,6 +1393,7 @@ fn analyzeBodyInner(
                     .builtin_extern     => try sema.zirBuiltinExtern(     block, extended),
                     .@"asm"             => try sema.zirAsm(               block, extended, false),
                     .asm_expr           => try sema.zirAsm(               block, extended, true),
+                    .asm_label          => try sema.zirAsmLabel(          block, extended),
                     .typeof_peer        => try sema.zirTypeofPeer(        block, extended, inst),
                     .compile_log        => try sema.zirCompileLog(        block, extended),
                     .min_multi          => try sema.zirMinMaxMulti(       block, extended, .min),
@@ -16268,6 +16269,66 @@ fn zirLoad(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.In
     const ptr_src = src; // TODO better source location
     const ptr = try sema.resolveInst(inst_data.operand);
     return sema.analyzeLoad(block, src, ptr, ptr_src);
+}
+
+fn zirAsmLabel(
+    sema: *Sema,
+    block: *Block,
+    extended: Zir.Inst.Extended.InstData,
+) CompileError!Air.Inst.Ref {
+    const extra = sema.code.extraData(Zir.Inst.InvNode, extended.operand).data;
+    const src = block.nodeOffset(extra.node);
+    const operand_src = block.builtinCallArgSrc(extra.node, 0);
+    const operand = try sema.resolveInst(@enumFromInt(@intFromEnum(extra.operand)));
+    const operand_ty = sema.typeOf(operand);
+    const pt = sema.pt;
+    const zcu = pt.zcu;
+    const ip = &zcu.intern_pool;
+    const gpa = sema.gpa;
+
+    try sema.requireRuntimeBlock(block, src, null);
+
+    try operand_ty.resolveLayout(pt);
+    if (operand_ty.zigTypeTag(zcu) != .enum_literal)
+        return sema.fail(block, operand_src, "expected .enum_literal as operand; found '{f}'", .{operand_ty.fmt(pt)});
+
+    const value = (try sema.resolveDefinedValue(block, operand_src, operand)).?;
+    const label = ip.indexToKey(value.toIntern()).enum_literal.toSlice(ip);
+    const func_info = zcu.funcInfo(sema.func_index);
+    const func_fqn = ip.getNav(func_info.owner_nav).fqn.toSlice(ip);
+    const asm_source = try std.fmt.allocPrint(gpa, "\"asmLabel.{d:0>3}.{s}.{s}\":", .{ @intFromEnum(extra.cntr), func_fqn, label });
+    defer gpa.free(asm_source);
+
+    const needed_capacity: usize = @typeInfo(Air.Asm).@"struct".fields.len + asm_source.len / 4 + 1;
+    try sema.air_extra.ensureUnusedCapacity(gpa, needed_capacity);
+
+    const clobbers = empty: {
+        const clobbers_ty = try sema.getBuiltinType(operand_src, .@"assembly.Clobbers");
+        break :empty try sema.structInitEmpty(block, clobbers_ty, operand_src, operand_src);
+    };
+    const clobbers_val = try sema.resolveConstDefinedValue(block, operand_src, clobbers, .{ .simple = .clobber });
+
+    const asm_air = try block.addInst(.{
+        .tag = .assembly,
+        .data = .{ .ty_pl = .{
+            .ty = Air.Inst.Ref.void_type,
+            .payload = sema.addExtraAssumeCapacity(Air.Asm{
+                .source_len = @intCast(asm_source.len),
+                .inputs_len = 0,
+                .clobbers = clobbers_val.toIntern(),
+                .flags = .{
+                    .is_volatile = true,
+                    .outputs_len = 0,
+                },
+            }),
+        } },
+    });
+
+    const buffer = mem.sliceAsBytes(sema.air_extra.unusedCapacitySlice());
+    @memcpy(buffer[0..asm_source.len], asm_source);
+    buffer[asm_source.len] = 0;
+    sema.air_extra.items.len += asm_source.len / 4 + 1;
+    return asm_air;
 }
 
 fn zirAsm(

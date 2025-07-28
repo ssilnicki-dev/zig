@@ -22,6 +22,9 @@ const BigIntMutable = std.math.big.int.Mutable;
 const Ast = std.zig.Ast;
 
 const Zir = @This();
+pub const InvCounter = enum(u32) {
+    _,
+};
 
 instructions: std.MultiArrayList(Inst).Slice,
 /// In order to store references to strings in fewer bytes, we copy all
@@ -101,6 +104,10 @@ pub fn extraData(code: Zir, comptime T: type, index: usize) ExtraData(T) {
             Inst.Param.Type,
             Inst.Func.RetTy,
             => @bitCast(code.extra[i]),
+            InvCounter => blk: {
+                code.extra[i] += 1;
+                break :blk @enumFromInt(code.extra[i]);
+            },
 
             else => @compileError("bad field type"),
         };
@@ -2105,6 +2112,9 @@ pub const Inst = struct {
         /// Marks a statement that can be stepped to but produces no code.
         /// `operand` and `small` are ignored.
         dbg_empty_stmt,
+        /// Injects label assembly instruction
+        /// `operand` is payload index to `InvNode`.
+        asm_label,
         /// At this point, AstGen encountered a fatal error which terminated ZIR lowering for this body.
         /// A file-level error has been reported. Sema should terminate semantic analysis.
         /// `operand` and `small` are ignored.
@@ -3161,6 +3171,12 @@ pub const Inst = struct {
     pub const ElemPtrImm = struct {
         ptr: Ref,
         index: u32,
+    };
+
+    pub const InvNode = struct {
+        node: Ast.Node.Offset,
+        operand: Ref,
+        cntr: InvCounter,
     };
 
     pub const Reify = struct {
@@ -4435,6 +4451,7 @@ fn findTrackableInner(
                 .inplace_arith_result_ty,
                 .tuple_decl,
                 .dbg_empty_stmt,
+                .asm_label,
                 .astgen_error,
                 => return,
 

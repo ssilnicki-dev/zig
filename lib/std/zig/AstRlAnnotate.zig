@@ -884,6 +884,10 @@ fn builtinCall(astrl: *AstRlAnnotate, block: ?*Block, ri: ResultInfo, node: Ast.
         .trap,
         .c_va_start,
         => return false,
+        .asm_label => {
+            _ = try astrl.expr(args[0], block, ResultInfo.none);
+            return false;
+        },
         // TODO: this is a workaround for llvm/llvm-project#68409
         // Zig tracking issue: #16876
         .frame_address => return true,

@@ -103,6 +103,7 @@ fn setExtra(astgen: *AstGen, index: usize, extra: anytype) void {
             Ast.OptionalTokenIndex,
             Ast.Node.Index,
             Ast.Node.OptionalIndex,
+            Zir.InvCounter,
             => @intFromEnum(@field(extra, field.name)),
 
             Ast.TokenOffset,
@@ -9739,6 +9740,15 @@ fn builtinCall(
             const result = try gz.addExtendedPayload(.work_group_id, Zir.Inst.UnNode{
                 .node = gz.nodeIndexToRelative(node),
                 .operand = operand,
+            });
+            return rvalue(gz, ri, result, node);
+        },
+        .asm_label => {
+            const operand = try comptimeExpr(gz, scope, .{ .rl = .none }, params[0], .inline_assembly_code);
+            const result = try gz.addExtendedPayload(.asm_label, Zir.Inst.InvNode{
+                .node = gz.nodeIndexToRelative(node),
+                .operand = operand,
+                .cntr = @enumFromInt(0),
             });
             return rvalue(gz, ri, result, node);
         },
