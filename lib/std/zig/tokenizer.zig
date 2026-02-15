@@ -346,6 +346,7 @@ pub const Tokenizer = struct {
         start,
         expect_newline,
         identifier,
+        unused_identifier,
         builtin,
         string_literal,
         string_literal_backslash,
@@ -542,11 +543,23 @@ pub const Tokenizer = struct {
                         result.tag = .identifier;
                         continue :state .string_literal;
                     },
-                    'a'...'z', 'A'...'Z', '_' => {
+                    'a'...'z', 'A'...'Z' => {
                         result.tag = .builtin;
                         continue :state .builtin;
                     },
+                    '_' => {
+                        result.tag = .identifier;
+                        continue :state .unused_identifier;
+                    },
                     else => continue :state .invalid,
+                }
+            },
+
+            .unused_identifier => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    ':' => {},
+                    else => result.tag = .invalid,
                 }
             },
 

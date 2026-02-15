@@ -1767,6 +1767,8 @@ fn structInitExpr(
         for (struct_init.ast.fields) |field| {
             const name_token = tree.firstToken(field) - 2;
             const name_index = try astgen.identAsString(name_token);
+            if (std.mem.eql(u8, tree.tokenSlice(name_token), "@_"))
+                continue; // allow duplicates to resolve into unique later on
 
             const gop = try duplicate_names.getOrPut(name_index);
 
@@ -5058,6 +5060,7 @@ fn structDeclInner(
     var any_comptime_fields = false;
     var any_aligned_fields = false;
     var any_default_inits = false;
+    var unused_fields_counter: u32 = 0;
     for (container_decl.ast.members) |member_node| {
         var member = switch (try containerMember(&block_scope, &namespace.base, &wip_members, member_node)) {
             .decl => continue,
@@ -5066,7 +5069,20 @@ fn structDeclInner(
 
         astgen.src_hasher.update(tree.getNodeSource(member_node));
 
-        const field_name = try astgen.identAsString(member.ast.main_token);
+        const name_tok = member.ast.main_token;
+        const raw_name = tree.tokenSlice(name_tok);
+        const unused_field_name_prefix = "__unused_field";
+        if ((layout == .@"packed" or layout == .@"extern") and std.mem.indexOf(u8, raw_name, unused_field_name_prefix) != null)
+            return astgen.failTok(name_tok, "For unused fields name use @_ instead.", .{});
+
+        const field_name = if (std.mem.eql(u8, raw_name, "@_")) blk: {
+            if (layout != .@"packed" and layout != .@"extern") {
+                return astgen.failTok(name_tok, "@_ is intended as unused field name placeholder in packed and extern structs.", .{});
+            }
+            unused_fields_counter += 1;
+            break :blk try astgen.unusedFieldNameAsString(node, unused_field_name_prefix, unused_fields_counter);
+        } else try astgen.identAsString(name_tok);
+
         member.convertToNonTupleLike(astgen.tree);
         assert(!member.ast.tuple_like);
         wip_members.appendToField(@intFromEnum(field_name));
@@ -11304,7 +11320,7 @@ fn appendIdentStr(
     const tree = astgen.tree;
     assert(tree.tokenTag(token) == .identifier);
     const ident_name = tree.tokenSlice(token);
-    if (!mem.startsWith(u8, ident_name, "@")) {
+    if (!mem.startsWith(u8, ident_name, "@") or mem.startsWith(u8, ident_name, "@_")) {
         return buf.appendSlice(astgen.gpa, ident_name);
     } else {
         const start = buf.items.len;
@@ -11535,6 +11551,32 @@ fn errNoteNode(
         .byte_offset = 0,
         .notes = 0,
     });
+}
+
+/// render unique name for @_ placeholder
+fn unusedFieldNameAsString(astgen: *AstGen, container_node: Ast.Node.Index, field_prefix: []const u8, field_index: u32) !Zir.NullTerminatedString {
+    const gpa = astgen.gpa;
+    const string_bytes = &astgen.string_bytes;
+    const str_index: u32 = @intCast(string_bytes.items.len);
+
+    const field_name = try std.fmt.allocPrint(gpa, "{s}_{d}_{d}", .{ field_prefix, @intFromEnum(container_node), field_index });
+    defer gpa.free(field_name);
+    try string_bytes.appendSlice(gpa, field_name);
+
+    const key: []const u8 = string_bytes.items[str_index..];
+    const gop = try astgen.string_table.getOrPutContextAdapted(gpa, key, StringIndexAdapter{
+        .bytes = string_bytes,
+    }, StringIndexContext{
+        .bytes = string_bytes,
+    });
+    if (gop.found_existing) {
+        string_bytes.shrinkRetainingCapacity(str_index);
+        return @enumFromInt(gop.key_ptr.*);
+    } else {
+        gop.key_ptr.* = str_index;
+        try string_bytes.append(gpa, 0);
+        return @enumFromInt(str_index);
+    }
 }
 
 fn identAsString(astgen: *AstGen, ident_token: Ast.TokenIndex) !Zir.NullTerminatedString {
@@ -13518,10 +13560,12 @@ fn scanContainer(
 
         const name_str_index = try astgen.identAsString(name_token);
 
-        if (kind == .decl) {
+        switch (kind) {
             // Put the name straight into `decls`, even if there are compile errors.
             // This avoids incorrect "undeclared identifier" errors later on.
-            try namespace.decls.put(gpa, name_str_index, member_node);
+            .decl => try namespace.decls.put(gpa, name_str_index, member_node),
+            .field => if (std.mem.eql(u8, tree.tokenSlice(name_token), "@_"))
+                continue, // allow duplicates to resolve into unique later on
         }
 
         {
