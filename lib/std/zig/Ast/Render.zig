@@ -2855,6 +2855,13 @@ fn renderQuotedIdentifier(r: *Render, token_index: Ast.TokenIndex, space: Space,
     const ais = r.ais;
     assert(tree.tokenTag(token_index) == .identifier);
     const lexeme = tokenSliceForRender(tree, token_index);
+
+    if (lexeme.len > 1 and lexeme[0] == '@' and lexeme[1] != '"') {
+        try renderIdentifierContents(ais, lexeme);
+        try renderSpace(r, token_index, lexeme.len, space);
+        return;
+    }
+
     assert(lexeme.len >= 3 and lexeme[0] == '@');
 
     if (!unquote) try ais.writeAll("@\"");

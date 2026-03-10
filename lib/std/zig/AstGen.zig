@@ -5017,7 +5017,16 @@ fn structDeclInner(
         member.convertToNonTupleLike(astgen.tree);
         assert(!member.ast.tuple_like);
 
-        field_names.get(astgen)[field_idx] = @intFromEnum(try astgen.identAsString(member.ast.main_token));
+        const name_tok = member.ast.main_token;
+        const raw_name = tree.tokenSlice(name_tok);
+        const field_name = if (isWhateverFieldName(raw_name)) blk: {
+            if (layout != .@"packed" and layout != .@"extern") {
+                return astgen.failTok(name_tok, "{s} is intended as whatever field name placeholder in packed and extern structs.", .{raw_name});
+            }
+            break :blk try astgen.whateverFieldNameAsString(raw_name[1..], next_field_idx);
+        } else try astgen.identAsString(name_tok);
+
+        field_names.get(astgen)[field_idx] = @intFromEnum(field_name);
 
         {
             const type_node = member.ast.type_expr.unwrap() orelse {
@@ -10751,7 +10760,7 @@ fn appendIdentStr(
     const tree = astgen.tree;
     assert(tree.tokenTag(token) == .identifier);
     const ident_name = tree.tokenSlice(token);
-    if (!mem.startsWith(u8, ident_name, "@")) {
+    if (!mem.startsWith(u8, ident_name, "@") or isWhateverFieldName(ident_name)) {
         return buf.appendSlice(astgen.gpa, ident_name);
     } else {
         const start = buf.items.len;
@@ -10982,6 +10991,36 @@ fn errNoteNode(
         .byte_offset = 0,
         .notes = 0,
     });
+}
+
+fn isWhateverFieldName(slice: []const u8) bool {
+    return slice.len > 1 and slice[0] == '@' and slice[1] != '"';
+}
+
+/// render unique name for @whatever placeholder
+fn whateverFieldNameAsString(astgen: *AstGen, field_prefix: []const u8, field_index: u32) !Zir.NullTerminatedString {
+    const gpa = astgen.gpa;
+    const string_bytes = &astgen.string_bytes;
+    const str_index: u32 = @intCast(string_bytes.items.len);
+
+    const field_name = try std.fmt.allocPrint(gpa, "{s}{d}", .{ field_prefix, field_index });
+    defer gpa.free(field_name);
+    try string_bytes.appendSlice(gpa, field_name);
+
+    const key: []const u8 = string_bytes.items[str_index..];
+    const gop = try astgen.string_table.getOrPutContextAdapted(gpa, key, StringIndexAdapter{
+        .bytes = string_bytes,
+    }, StringIndexContext{
+        .bytes = string_bytes,
+    });
+    if (gop.found_existing) {
+        string_bytes.shrinkRetainingCapacity(str_index);
+        return @enumFromInt(gop.key_ptr.*);
+    } else {
+        gop.key_ptr.* = str_index;
+        try string_bytes.append(gpa, 0);
+        return @enumFromInt(str_index);
+    }
 }
 
 fn identAsString(astgen: *AstGen, ident_token: Ast.TokenIndex) !Zir.NullTerminatedString {
@@ -13034,10 +13073,12 @@ fn scanContainer(
 
         const name_str_index = try astgen.identAsString(name_token);
 
-        if (kind == .decl) {
+        switch (kind) {
             // Put the name straight into `decls`, even if there are compile errors.
             // This avoids incorrect "undeclared identifier" errors later on.
-            try namespace.decls.put(gpa, name_str_index, member_node);
+            .decl => try namespace.decls.put(gpa, name_str_index, member_node),
+            .field => if (isWhateverFieldName(tree.tokenSlice(name_token)))
+                continue, // allow duplicates to resolve into unique later on
         }
 
         {

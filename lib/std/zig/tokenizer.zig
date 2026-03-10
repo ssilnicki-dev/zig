@@ -677,6 +677,7 @@ pub const Tokenizer = struct {
                 self.index += 1;
                 switch (self.buffer[self.index]) {
                     'a'...'z', 'A'...'Z', '_', '0'...'9' => continue :state .builtin,
+                    ':' => result.tag = .identifier,
                     else => {},
                 }
             },
