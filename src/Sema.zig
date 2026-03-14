@@ -463,6 +463,7 @@ pub const Block = struct {
         is_generic_instantiation: bool,
 
         has_comptime_args: bool,
+        at_label_counter: u32 = 0,
         comptime_result: Air.Inst.Ref,
         merges: Merges,
 
@@ -15532,12 +15533,17 @@ fn zirAt(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData) Compi
         .enum_literal => |name| name.toSlice(ip),
         else => return sema.fail(block, label_src, "expected enum literal, found '{f}'", .{sema.typeOf(label_ref).fmt(pt)}),
     };
+    const function_name = ip.getNav(zcu.funcInfo(sema.func_index).owner_nav).fqn.toSlice(ip);
 
     const clobbers_ty = try sema.getBuiltinType(src, .@"assembly.Clobbers");
     const clobbers = try sema.structInitEmpty(block, clobbers_ty, src, src);
     const clobbers_val = try sema.resolveConstDefinedValue(block, src, clobbers, .{ .simple = .clobber });
 
-    const asm_source = try std.fmt.allocPrint(sema.arena, "{s}:", .{label_name});
+    const asm_source = if (block.inlining) |inlining| asm_source: {
+        const index = inlining.at_label_counter;
+        inlining.at_label_counter += 1;
+        break :asm_source try std.fmt.allocPrint(sema.arena, "at.{s}.{s}.{d}:", .{ function_name, label_name, index });
+    } else try std.fmt.allocPrint(sema.arena, "at.{s}.{s}:", .{ function_name, label_name });
 
     try sema.air_extra.ensureUnusedCapacity(gpa, @typeInfo(Air.Asm).@"struct".fields.len + asm_source.len / 4 + 1);
     _ = try block.addInst(.{
