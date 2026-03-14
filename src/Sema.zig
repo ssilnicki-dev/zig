@@ -1458,6 +1458,11 @@ fn analyzeBodyInner(
                         i += 1;
                         continue;
                     },
+                    .at => {
+                        try sema.zirAt(block, extended);
+                        i += 1;
+                        continue;
+                    },
                     .disable_instrumentation => {
                         try sema.zirDisableInstrumentation();
                         i += 1;
@@ -15504,6 +15509,57 @@ fn zirLoad(sema: *Sema, block: *Block, inst: Zir.Inst.Index) CompileError!Air.In
     const ptr_src = src; // TODO better source location
     const ptr = sema.resolveInst(inst_data.operand);
     return sema.analyzeLoad(block, src, ptr, ptr_src);
+}
+
+fn zirAt(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData) CompileError!void {
+    const pt = sema.pt;
+    const zcu = pt.zcu;
+    const comp = zcu.comp;
+    const gpa = comp.gpa;
+
+    const extra = sema.code.extraData(Zir.Inst.UnNode, extended.operand).data;
+    const src = block.nodeOffset(extra.node);
+    const label_src = block.builtinCallArgSrc(extra.node, 0);
+
+    try sema.requireRuntimeBlock(block, src, null);
+
+    const label_ref = sema.resolveInst(extra.operand);
+    const label_val = (try sema.resolveDefinedValue(block, label_src, label_ref)) orelse
+        return sema.fail(block, label_src, "expected enum literal, found runtime value", .{});
+
+    const ip = &zcu.intern_pool;
+    const label_name = switch (ip.indexToKey(label_val.toIntern())) {
+        .enum_literal => |name| name.toSlice(ip),
+        else => return sema.fail(block, label_src, "expected enum literal, found '{f}'", .{sema.typeOf(label_ref).fmt(pt)}),
+    };
+
+    const clobbers_ty = try sema.getBuiltinType(src, .@"assembly.Clobbers");
+    const clobbers = try sema.structInitEmpty(block, clobbers_ty, src, src);
+    const clobbers_val = try sema.resolveConstDefinedValue(block, src, clobbers, .{ .simple = .clobber });
+
+    const asm_source = try std.fmt.allocPrint(sema.arena, "{s}:", .{label_name});
+
+    try sema.air_extra.ensureUnusedCapacity(gpa, @typeInfo(Air.Asm).@"struct".fields.len + asm_source.len / 4 + 1);
+    _ = try block.addInst(.{
+        .tag = .assembly,
+        .data = .{ .ty_pl = .{
+            .ty = .void_type,
+            .payload = sema.addExtraAssumeCapacity(Air.Asm{
+                .source_len = @intCast(asm_source.len),
+                .inputs_len = 0,
+                .clobbers = clobbers_val.toIntern(),
+                .flags = .{
+                    .is_volatile = true,
+                    .outputs_len = 0,
+                },
+            }),
+        } },
+    });
+
+    const buffer = mem.sliceAsBytes(sema.air_extra.unusedCapacitySlice());
+    @memcpy(buffer[0..asm_source.len], asm_source);
+    buffer[asm_source.len] = 0;
+    sema.air_extra.items.len += asm_source.len / 4 + 1;
 }
 
 fn zirAsm(

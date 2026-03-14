@@ -7,6 +7,7 @@ pub const Tag = enum {
     atomic_load,
     atomic_rmw,
     atomic_store,
+    at,
     bit_cast,
     bit_offset_of,
     int_from_bool,
@@ -208,6 +209,14 @@ pub const list = list: {
             .{
                 .tag = .atomic_store,
                 .param_count = 4,
+            },
+        },
+        .{
+            "@at",
+            .{
+                .tag = .at,
+                .param_count = 1,
+                .illegal_outside_function = true,
             },
         },
         .{

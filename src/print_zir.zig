@@ -518,6 +518,7 @@ const Writer = struct {
             .frame,
             .frame_address,
             .breakpoint,
+            .at,
             .disable_instrumentation,
             .disable_intrinsics,
             .c_va_start,
