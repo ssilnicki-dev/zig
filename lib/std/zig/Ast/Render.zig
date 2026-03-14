@@ -2757,10 +2757,12 @@ fn renderIdentifier(r: *Render, token_index: Ast.TokenIndex, space: Space, quote
         return renderToken(r, token_index, space);
     }
 
-    assert(lexeme.len >= 3);
-    assert(lexeme[0] == '@');
-    assert(lexeme[1] == '\"');
-    assert(lexeme[lexeme.len - 1] == '\"');
+    // Most at-prefixed identifiers are quoted (e.g. @"foo"). However, parser-
+    // or fixup generated placeholders may be raw at-prefixed identifiers
+    // (for example @0). Format those verbatim instead of crashing.
+    if (lexeme.len < 3 or lexeme[1] != '\"' or lexeme[lexeme.len - 1] != '\"') {
+        return renderToken(r, token_index, space);
+    }
     const contents = lexeme[2 .. lexeme.len - 1]; // inside the @"" quotation
 
     // Empty name can't be unquoted.
