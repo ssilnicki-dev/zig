@@ -4,6 +4,7 @@ pub const Tag = enum {
     align_cast,
     align_of,
     as,
+    at,
     atomic_load,
     atomic_rmw,
     atomic_store,
@@ -1060,6 +1061,14 @@ pub const list = list: {
             "@workGroupId",
             .{
                 .tag = .work_group_id,
+                .param_count = 1,
+                .illegal_outside_function = true,
+            },
+        },
+        .{
+            "@at",
+            .{
+                .tag = .at,
                 .param_count = 1,
                 .illegal_outside_function = true,
             },

@@ -694,6 +694,7 @@ const Writer = struct {
 
             .dbg_empty_stmt => try stream.writeAll("))"),
             .astgen_error => try stream.writeAll("))"),
+            .at => try stream.writeAll("))"),
         }
     }
 

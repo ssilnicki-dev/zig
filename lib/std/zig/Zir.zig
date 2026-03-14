@@ -61,6 +61,10 @@ pub const ExtraIndex = enum(u32) {
     _,
 };
 
+pub const InvCounter = enum(u32) {
+    _,
+};
+
 fn ExtraData(comptime T: type) type {
     return struct { data: T, end: usize };
 }
@@ -100,6 +104,10 @@ pub fn extraData(code: Zir, comptime T: type, index: usize) ExtraData(T) {
             Inst.Param.Type,
             Inst.Func.RetTy,
             => @bitCast(code.extra[i]),
+            InvCounter => brk: {
+                code.extra[i] += 1;
+                break :brk @enumFromInt(code.extra[i]);
+            },
 
             else => @compileError("bad field type"),
         };
@@ -2171,6 +2179,9 @@ pub const Inst = struct {
         /// For example: Provided with error{Foo}!?f64, returns f64.
         /// `operand` is `operand: Air.Inst.Ref`.
         float_op_result_ty,
+        /// Injects label assembly instruction
+        /// `operand` is payload index to `UnNode`.
+        at,
 
         pub const InstData = struct {
             opcode: Extended,
@@ -3241,6 +3252,12 @@ pub const Inst = struct {
     pub const ElemPtrImm = struct {
         ptr: Ref,
         index: u32,
+    };
+
+    pub const InvNode = struct {
+        node: Ast.Node.Offset,
+        operand: Ref,
+        cntr: InvCounter,
     };
 
     pub const ReifyPointer = struct {
@@ -4385,6 +4402,7 @@ fn findTrackableInner(
                 .dbg_empty_stmt,
                 .astgen_error,
                 .float_op_result_ty,
+                .at,
                 => return,
 
                 // `@TypeOf` has a body.

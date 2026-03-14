@@ -1,0 +1,13 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "main.zig",
+      "type": "lldb-vscode",
+      "request": "launch",
+      "stopOnEntry": false,
+        "program": "${workspaceFolder}/build_master_2026_03_13/stage3/bin/zig",
+        "args": ["build-exe", "${workspaceFolder}/main.zig"]
+    }
+  ]
+}
