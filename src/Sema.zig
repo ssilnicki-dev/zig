@@ -128,6 +128,9 @@ type_references: std.AutoArrayHashMapUnmanaged(InternPool.Index, void) = .empty,
 /// `AnalUnit` multiple times.
 dependencies: std.AutoArrayHashMapUnmanaged(InternPool.Dependee, void) = .empty,
 
+/// Per-inlined-function counters used to uniquify @at labels across inline call sites.
+at_inline_func_counters: std.AutoHashMapUnmanaged(InternPool.Index, u32) = .empty,
+
 /// Whether memoization of this call is permitted. Operations with side effects global
 /// to the `Sema`, such as `@setEvalBranchQuota`, set this to `false`. It is observed
 /// by `analyzeCall`.
@@ -463,7 +466,6 @@ pub const Block = struct {
         is_generic_instantiation: bool,
 
         has_comptime_args: bool,
-        at_label_counter: u32 = 0,
         comptime_result: Air.Inst.Ref,
         merges: Merges,
 
@@ -1020,6 +1022,7 @@ pub fn deinit(sema: *Sema) void {
     sema.references.deinit(gpa);
     sema.type_references.deinit(gpa);
     sema.dependencies.deinit(gpa);
+    sema.at_inline_func_counters.deinit(gpa);
     sema.* = undefined;
 }
 
@@ -15539,9 +15542,11 @@ fn zirAt(sema: *Sema, block: *Block, extended: Zir.Inst.Extended.InstData) Compi
     const clobbers = try sema.structInitEmpty(block, clobbers_ty, src, src);
     const clobbers_val = try sema.resolveConstDefinedValue(block, src, clobbers, .{ .simple = .clobber });
 
-    const asm_source = if (block.inlining) |inlining| asm_source: {
-        const index = inlining.at_label_counter;
-        inlining.at_label_counter += 1;
+    const asm_source = if (block.inlining != null) asm_source: {
+        const gop = try sema.at_inline_func_counters.getOrPut(gpa, sema.func_index);
+        if (!gop.found_existing) gop.value_ptr.* = 0;
+        const index = gop.value_ptr.*;
+        gop.value_ptr.* += 1;
         break :asm_source try std.fmt.allocPrint(sema.arena, "at.{s}.{s}.{d}:", .{ function_name, label_name, index });
     } else try std.fmt.allocPrint(sema.arena, "at.{s}.{s}:", .{ function_name, label_name });
 
