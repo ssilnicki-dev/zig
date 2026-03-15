@@ -879,6 +879,10 @@ fn builtinCall(astrl: *AstRlAnnotate, block: ?*Block, ri: ResultInfo, node: Ast.
         => return false,
         // TODO: this is a workaround for llvm/llvm-project#68409
         // Zig tracking issue: #16876
+        .at => {
+            _ = try astrl.expr(args[0], block, ResultInfo.none);
+            return false;
+        },
         .frame_address => return true,
         // These builtins take a single argument with a known result type, but do not consume their
         // result pointer.

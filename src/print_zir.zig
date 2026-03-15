@@ -558,6 +558,7 @@ const Writer = struct {
             .c_undef,
             .c_include,
             .set_float_mode,
+            .at,
             .wasm_memory_size,
             .int_from_error,
             .error_from_int,

@@ -1621,6 +1621,7 @@ pub const Inst = struct {
                 .extended => switch (data.extended.opcode) {
                     .branch_hint,
                     .breakpoint,
+                    .at,
                     .disable_instrumentation,
                     .disable_intrinsics,
                     => true,
@@ -2031,6 +2032,8 @@ pub const Inst = struct {
         /// Implements `@breakpoint`.
         /// `operand` is `src_node: Ast.Node.Offset`.
         breakpoint,
+        /// Implements `@at`. `operand` is payload index to `UnNode`.
+        at,
         /// Implement builtin `@disableInstrumentation`. `operand` is `src_node: Ast.Node.Offset`.
         disable_instrumentation,
         /// Implement builtin `@disableIntrinsics`. `operand` is `src_node: i32`.
@@ -4353,6 +4356,7 @@ fn findTrackableInner(
                 .set_float_mode,
                 .error_cast,
                 .breakpoint,
+                .at,
                 .disable_instrumentation,
                 .disable_intrinsics,
                 .select,

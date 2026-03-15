@@ -2883,6 +2883,7 @@ fn addEnsureResult(gz: *GenZir, maybe_unused_result: Zir.Inst.Ref, statement: As
 
             .extended => switch (gz.astgen.instructions.items(.data)[@intFromEnum(inst)].extended.opcode) {
                 .breakpoint,
+                .at,
                 .disable_instrumentation,
                 .disable_intrinsics,
                 .set_float_mode,
@@ -9201,7 +9202,15 @@ fn builtinCall(
         .error_return_trace      => return rvalue(gz, ri, try gz.addNodeExtended(.error_return_trace,      node), node),
         .frame                   => return rvalue(gz, ri, try gz.addNodeExtended(.frame,                   node), node),
         .frame_address           => return rvalue(gz, ri, try gz.addNodeExtended(.frame_address,           node), node),
-        .breakpoint              => return rvalue(gz, ri, try gz.addNodeExtended(.breakpoint,              node), node),
+        .breakpoint => return rvalue(gz, ri, try gz.addNodeExtended(.breakpoint, node), node),
+        .at => {
+            const label = try expr(gz, scope, .{ .rl = .none }, params[0]);
+            const result = try gz.addExtendedPayload(.at, Zir.Inst.UnNode{
+                .node = gz.nodeIndexToRelative(node),
+                .operand = label,
+            });
+            return rvalue(gz, ri, result, node);
+        },
         .disable_instrumentation => return rvalue(gz, ri, try gz.addNodeExtended(.disable_instrumentation, node), node),
         .disable_intrinsics      => return rvalue(gz, ri, try gz.addNodeExtended(.disable_intrinsics,      node), node),
 
